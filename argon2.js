@@ -51,7 +51,7 @@ const opts = {
         }
     }
 };
-async function loadArgon2(path = '/argon2.wasm') {
+async function loadArgon2(path = './argon2.wasm') {
     if (typeof WebAssembly !== 'object') {
         throw Argon2_ErrorCodes.ARGON2WASM_UNSUPPORTED_BROWSER;
     }
