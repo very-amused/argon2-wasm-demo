@@ -1,9 +1,9 @@
-var Argon2_Actions;
+export var Argon2_Actions;
 (function (Argon2_Actions) {
     Argon2_Actions[Argon2_Actions["LoadArgon2"] = 0] = "LoadArgon2";
     Argon2_Actions[Argon2_Actions["Hash2i"] = 1] = "Hash2i";
 })(Argon2_Actions || (Argon2_Actions = {}));
-var Argon2_ErrorCodes;
+export var Argon2_ErrorCodes;
 (function (Argon2_ErrorCodes) {
     Argon2_ErrorCodes[Argon2_ErrorCodes["ARGON2_OK"] = 0] = "ARGON2_OK";
     Argon2_ErrorCodes[Argon2_ErrorCodes["ARGON2_OUTPUT_PTR_NULL"] = -1] = "ARGON2_OUTPUT_PTR_NULL";
@@ -45,122 +45,3 @@ var Argon2_ErrorCodes;
     Argon2_ErrorCodes[Argon2_ErrorCodes["ARGON2WASM_BAD_REQUEST"] = 2] = "ARGON2WASM_BAD_REQUEST";
     Argon2_ErrorCodes[Argon2_ErrorCodes["ARGON2WASM_UNSUPPORTED_BROWSER"] = 3] = "ARGON2WASM_UNSUPPORTED_BROWSER";
 })(Argon2_ErrorCodes || (Argon2_ErrorCodes = {}));
-
-let argon2;
-function getErrorMessage(err) {
-    if (err instanceof Error) {
-        return err.message;
-    }
-    else if (typeof err === 'string') {
-        return err;
-    }
-    else {
-        return 'An unknown error has occured, and a message was unable to be parsed from this error';
-    }
-}
-function postError(err) {
-    if (err in Argon2_ErrorCodes) {
-        postMessage({
-            code: err
-        });
-    }
-    else {
-        postMessage({
-            code: Argon2_ErrorCodes.ARGON2WASM_UNKNOWN,
-            message: getErrorMessage(err)
-        });
-    }
-}
-function overwriteSecure(view, passes = 3) {
-    for (let i = 0; i < passes; i++) {
-        crypto.getRandomValues(view);
-    }
-}
-async function loadArgon2(path = './argon2.wasm') {
-    if (typeof WebAssembly !== 'object') {
-        throw Argon2_ErrorCodes.ARGON2WASM_UNSUPPORTED_BROWSER;
-    }
-    const opts = {
-        env: {
-            emscripten_notify_memory_growth() {
-            }
-        }
-    };
-    let source;
-    if (typeof WebAssembly.instantiateStreaming === 'function') {
-        source = await WebAssembly.instantiateStreaming(fetch(path), opts);
-    }
-    else {
-        const res = await fetch(path);
-        const raw = await res.arrayBuffer();
-        source = await WebAssembly.instantiate(raw, opts);
-    }
-    return source.instance.exports;
-}
-function hash(options) {
-    const saltLen = options.salt.byteLength;
-    const saltPtr = argon2.malloc_buffer(saltLen);
-    let saltView = new Uint8Array(argon2.memory.buffer, saltPtr, saltLen);
-    for (let i = 0; i < saltLen; i++) {
-        saltView[i] = options.salt[i];
-    }
-    const encoded = new TextEncoder().encode(options.password.normalize('NFKC'));
-    const passwordLen = encoded.byteLength;
-    const passwordPtr = argon2.malloc_buffer(passwordLen);
-    let passwordView = new Uint8Array(argon2.memory.buffer, passwordPtr, passwordLen);
-    for (let i = 0; i < passwordLen; i++) {
-        passwordView[i] = encoded[i];
-    }
-    overwriteSecure(encoded);
-    const hashLen = options.hashLen;
-    const hashPtr = argon2.malloc_buffer(hashLen);
-    const code = argon2.hash_2i(options.timeCost, options.memoryCost, 1, passwordPtr, passwordLen, saltPtr, saltLen, hashPtr, hashLen);
-    passwordView = new Uint8Array(argon2.memory.buffer, passwordPtr, passwordLen);
-    overwriteSecure(passwordView);
-    argon2.free_buffer(passwordPtr);
-    saltView = new Uint8Array(argon2.memory.buffer, saltPtr, saltLen);
-    overwriteSecure(saltView);
-    argon2.free_buffer(saltPtr);
-    overwriteSecure(options.salt);
-    const hash = new Uint8Array(hashLen);
-    const hashView = new Uint8Array(argon2.memory.buffer, hashPtr, hashLen);
-    for (let i = 0; i < hashLen; i++) {
-        hash[i] = hashView[i];
-    }
-    overwriteSecure(hashView);
-    argon2.free_buffer(hashPtr);
-    postMessage({
-        code,
-        body: hash
-    }, [hash.buffer]);
-}
-onmessage = async function (evt) {
-    if (Array.isArray(evt.data) || typeof evt.data !== 'object') {
-        postMessage({
-            code: Argon2_ErrorCodes.ARGON2WASM_BAD_REQUEST,
-            body: null
-        });
-    }
-    const req = evt.data;
-    switch (req.action) {
-        case Argon2_Actions.LoadArgon2:
-            try {
-                argon2 = await loadArgon2();
-            }
-            catch (err) {
-                postError(err);
-                return;
-            }
-            postMessage({
-                code: Argon2_ErrorCodes.ARGON2_OK
-            });
-            break;
-        case Argon2_Actions.Hash2i:
-            hash(req.body.options);
-            break;
-        default:
-            postMessage({
-                code: Argon2_ErrorCodes.ARGON2WASM_BAD_REQUEST
-            });
-    }
-};
