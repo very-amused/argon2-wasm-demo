@@ -67,6 +67,10 @@ pre {
   /* Using the vertical padding of 0.3 rem allows the calculation of a minimum height that results in no height change when text is added */
   min-height: calc(calc(2*0.3rem) + 1.5rem);
   font-family: 'Fira Mono', monospace;
+  
+  /* Wrap text overflow */
+  white-space: normal;
+  word-break: break-all;
 }
 
 @keyframes flash {
