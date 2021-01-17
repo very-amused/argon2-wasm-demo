@@ -2,6 +2,8 @@ export var Argon2_Actions;
 (function (Argon2_Actions) {
     Argon2_Actions[Argon2_Actions["LoadArgon2"] = 0] = "LoadArgon2";
     Argon2_Actions[Argon2_Actions["Hash2i"] = 1] = "Hash2i";
+    Argon2_Actions[Argon2_Actions["Hash2d"] = 2] = "Hash2d";
+    Argon2_Actions[Argon2_Actions["Hash2id"] = 3] = "Hash2id";
 })(Argon2_Actions || (Argon2_Actions = {}));
 export var Argon2_ErrorCodes;
 (function (Argon2_ErrorCodes) {
@@ -45,17 +47,3 @@ export var Argon2_ErrorCodes;
     Argon2_ErrorCodes[Argon2_ErrorCodes["ARGON2WASM_BAD_REQUEST"] = 2] = "ARGON2WASM_BAD_REQUEST";
     Argon2_ErrorCodes[Argon2_ErrorCodes["ARGON2WASM_UNSUPPORTED_BROWSER"] = 3] = "ARGON2WASM_UNSUPPORTED_BROWSER";
 })(Argon2_ErrorCodes || (Argon2_ErrorCodes = {}));
-const opts = {
-    env: {
-        emscripten_notify_memory_growth() {
-        }
-    }
-};
-async function loadArgon2(path = './argon2.wasm') {
-    if (typeof WebAssembly !== 'object') {
-        throw Argon2_ErrorCodes.ARGON2WASM_UNSUPPORTED_BROWSER;
-    }
-    const source = await WebAssembly.instantiateStreaming(fetch(path), opts);
-    return source.instance.exports;
-}
-export { loadArgon2 };

@@ -1,23 +1,29 @@
-let data = [];
-function onWorkerMessage(evt) {
-    data.push(evt.data);
+const data = {};
+function onWorkerMessage(evt, id) {
+    data[id].push(evt.data);
 }
-export function initResponseListener(worker) {
-    worker.addEventListener('message', onWorkerMessage, true);
+export function initResponseListener(worker, id) {
+    data[id] = [];
+    worker.addEventListener('message', (evt) => {
+        onWorkerMessage(evt, id);
+    }, true);
 }
-export function removeResponseListener(worker) {
-    worker.removeEventListener('message', onWorkerMessage, true);
-    return data.length;
+export function removeResponseListener(worker, id) {
+    worker.removeEventListener('message', (evt) => {
+        onWorkerMessage(evt, id);
+    }, true);
+    return data[id].length;
 }
-export async function nextMessage(worker) {
+export async function nextMessage(worker, id) {
     return new Promise((resolve) => {
-        if (data.length) {
-            resolve(data[data.length - 1]);
-            data.splice(data.length - 1, 1);
+        if (data[id].length) {
+            resolve(data[id][data[id].length - 1]);
+            data[id].splice(data[id].length - 1, 1);
+            return;
         }
         worker.addEventListener('message', () => {
-            resolve(data[data.length - 1]);
-            data.splice(data.length - 1, 1);
+            resolve(data[id][data[id].length - 1]);
+            data[id].splice(data[id].length - 1, 1);
         }, {
             once: true
         });

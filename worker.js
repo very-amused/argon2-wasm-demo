@@ -2,6 +2,8 @@ var Argon2_Actions;
 (function (Argon2_Actions) {
     Argon2_Actions[Argon2_Actions["LoadArgon2"] = 0] = "LoadArgon2";
     Argon2_Actions[Argon2_Actions["Hash2i"] = 1] = "Hash2i";
+    Argon2_Actions[Argon2_Actions["Hash2d"] = 2] = "Hash2d";
+    Argon2_Actions[Argon2_Actions["Hash2id"] = 3] = "Hash2id";
 })(Argon2_Actions || (Argon2_Actions = {}));
 var Argon2_ErrorCodes;
 (function (Argon2_ErrorCodes) {
@@ -76,7 +78,12 @@ function overwriteSecure(view, passes = 3) {
         crypto.getRandomValues(view);
     }
 }
-async function loadArgon2(path = './argon2.wasm') {
+async function simdSupported(wasmRoot = '.') {
+    const res = await fetch(`${wasmRoot}/simd-test.wasm`);
+    const raw = await res.arrayBuffer();
+    return WebAssembly.validate(raw);
+}
+async function loadArgon2(wasmRoot = '.', simd = false) {
     if (typeof WebAssembly !== 'object') {
         throw Argon2_ErrorCodes.ARGON2WASM_UNSUPPORTED_BROWSER;
     }
@@ -86,41 +93,64 @@ async function loadArgon2(path = './argon2.wasm') {
             }
         }
     };
+    const file = (simd && (await simdSupported(wasmRoot))) ? 'argon2-simd.wasm' : 'argon2.wasm';
     let source;
     if (typeof WebAssembly.instantiateStreaming === 'function') {
-        source = await WebAssembly.instantiateStreaming(fetch(path), opts);
+        source = await WebAssembly.instantiateStreaming(fetch(`${wasmRoot}/${file}`), opts);
     }
     else {
-        const res = await fetch(path);
+        const res = await fetch(`${wasmRoot}/${file}`);
         const raw = await res.arrayBuffer();
         source = await WebAssembly.instantiate(raw, opts);
     }
     return source.instance.exports;
 }
-function hash(options) {
+function hash(options, type) {
     const saltLen = options.salt.byteLength;
-    const saltPtr = argon2.malloc_buffer(saltLen);
+    const saltPtr = argon2.malloc(saltLen);
     let saltView = new Uint8Array(argon2.memory.buffer, saltPtr, saltLen);
     for (let i = 0; i < saltLen; i++) {
         saltView[i] = options.salt[i];
     }
     const encoded = new TextEncoder().encode(options.password.normalize('NFKC'));
     const passwordLen = encoded.byteLength;
-    const passwordPtr = argon2.malloc_buffer(passwordLen);
+    const passwordPtr = argon2.malloc(passwordLen);
     let passwordView = new Uint8Array(argon2.memory.buffer, passwordPtr, passwordLen);
     for (let i = 0; i < passwordLen; i++) {
         passwordView[i] = encoded[i];
     }
     overwriteSecure(encoded);
     const hashLen = options.hashLen;
-    const hashPtr = argon2.malloc_buffer(hashLen);
-    const code = argon2.hash_2i(options.timeCost, options.memoryCost, 1, passwordPtr, passwordLen, saltPtr, saltLen, hashPtr, hashLen);
+    const hashPtr = argon2.malloc(hashLen);
+    const args = [
+        options.timeCost,
+        options.memoryCost,
+        1,
+        passwordPtr,
+        passwordLen,
+        saltPtr,
+        saltLen,
+        hashPtr,
+        hashLen
+    ];
+    let code;
+    switch (type) {
+        case 0:
+            code = argon2.argon2i_hash_raw.apply(null, args);
+            break;
+        case 1:
+            code = argon2.argon2d_hash_raw.apply(null, args);
+            break;
+        case 2:
+            code = argon2.argon2id_hash_raw.apply(null, args);
+            break;
+    }
     passwordView = new Uint8Array(argon2.memory.buffer, passwordPtr, passwordLen);
     overwriteSecure(passwordView);
-    argon2.free_buffer(passwordPtr);
+    argon2.free(passwordPtr);
     saltView = new Uint8Array(argon2.memory.buffer, saltPtr, saltLen);
     overwriteSecure(saltView);
-    argon2.free_buffer(saltPtr);
+    argon2.free(saltPtr);
     overwriteSecure(options.salt);
     const hash = new Uint8Array(hashLen);
     const hashView = new Uint8Array(argon2.memory.buffer, hashPtr, hashLen);
@@ -128,7 +158,7 @@ function hash(options) {
         hash[i] = hashView[i];
     }
     overwriteSecure(hashView);
-    argon2.free_buffer(hashPtr);
+    argon2.free(hashPtr);
     postMessage({
         code,
         body: hash
@@ -145,7 +175,8 @@ onmessage = async function (evt) {
     switch (req.action) {
         case Argon2_Actions.LoadArgon2:
             try {
-                argon2 = await loadArgon2();
+                const params = req.body;
+                argon2 = await loadArgon2(params.wasmRoot, params.simd);
             }
             catch (err) {
                 postError(err);
@@ -156,7 +187,13 @@ onmessage = async function (evt) {
             });
             break;
         case Argon2_Actions.Hash2i:
-            hash(req.body.options);
+            hash(req.body, 0);
+            break;
+        case Argon2_Actions.Hash2d:
+            hash(req.body, 1);
+            break;
+        case Argon2_Actions.Hash2id:
+            hash(req.body, 2);
             break;
         default:
             postMessage({
